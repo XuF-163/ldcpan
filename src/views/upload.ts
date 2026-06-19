@@ -16,16 +16,15 @@ export function renderUpload(rctx: RenderCtx, categories: string[]): string {
         <label>选择文件</label>
         <input class="input" type="file" name="file" required>
 
-        <label>分类（可选）</label>
-        <input class="input" name="category" list="catlist" placeholder="如：电子书、软件、教程">
+        <label>分类</label>
+        <input class="input" name="category" list="catlist" placeholder="可选">
         <datalist id="catlist">${catOpts}</datalist>
 
-        <label>描述（可选）</label>
-        <textarea class="input" name="description" rows="3" placeholder="文件说明"></textarea>
+        <label>描述</label>
+        <textarea class="input" name="description" rows="2" placeholder="可选"></textarea>
 
-        <label>定价（积分）</label>
-        <input class="input" type="number" name="price" min="0" step="1" placeholder="留空=默认价，0=免费">
-        <div class="muted" style="font-size:12px;margin-top:4px">留空使用站点默认价；填 0 为免费下载；填正数为该文件单价。</div>
+        <label>价格（积分，0=免费）</label>
+        <input class="input" type="number" name="price" min="0" step="1" value="0">
 
         <div style="margin-top:16px">
           <button class="btn btn-primary" type="submit">上传</button>

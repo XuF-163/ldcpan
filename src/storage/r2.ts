@@ -37,6 +37,23 @@ export async function deleteObject(bucket: R2Bucket, key: string): Promise<void>
   await bucket.delete(key);
 }
 
+/**
+ * 简单全量读取（用于缩略图等小对象预览）。
+ * 返回 body 流 + content-type + size，供路由直接 new Response。
+ */
+export async function getObject(
+  bucket: R2Bucket,
+  key: string,
+): Promise<{ body: ReadableStream; size: number; etag: string | null } | null> {
+  const obj = await bucket.get(key);
+  if (!obj) return null;
+  return {
+    body: obj.body,
+    size: obj.size,
+    etag: obj.etag ?? null,
+  };
+}
+
 export interface RangedObject {
   body: ReadableStream;
   status: number;

@@ -9,7 +9,7 @@ import type { Bindings } from "../env";
 import { effectivePrice } from "../env";
 import { requireAuth, getSession } from "../auth/session";
 import { getFile, incrementDownloads } from "../storage/files";
-import { rangedGet } from "../storage/r2";
+import { rangedGet, getObject } from "../storage/r2";
 import { isOwned, issueDownloadToken, consumeDownloadToken } from "../payment/orders";
 import { getShare, shareStatus, incDownload } from "../storage/shares";
 
@@ -69,4 +69,32 @@ downloadRoutes.get("/dl/:token", async (c) => {
   c.executionCtx.waitUntil(incrementDownloads(c.env.DB, file.id));
 
   return new Response(obj.body, { status: obj.status, headers: obj.headers });
+});
+
+/**
+ * 缩略图预览：GET /thumb/:id
+ * 仅对图片类文件（mime 以 image/ 开头）生效，inline 返回原始图片字节。
+ * - 公开访问（网盘目录预览语义，类似文件管理器的缩略图）
+ * - 浏览器缓存 1 小时，减轻 R2 读取
+ * - 非图片返回 404（前端会回退到类型图标）
+ * - 隐藏文件：仅管理员可见缩略图
+ */
+downloadRoutes.get("/thumb/:id", async (c) => {
+  const session = getSession(c);
+  const file = await getFile(c.env.DB, c.req.param("id"));
+  if (!file) return c.text("Not Found", 404);
+  if (file.hidden && !session?.isAdmin) return c.text("Not Found", 404);
+  // 仅图片
+  if (!file.mime || !file.mime.startsWith("image/")) return c.text("Not an image", 404);
+
+  const obj = await getObject(c.env.BUCKET, file.key);
+  if (!obj) return c.text("底层对象缺失", 404);
+
+  const headers: Record<string, string> = {
+    "Content-Type": file.mime,
+    "Cache-Control": "public, max-age=3600, immutable",
+    "Content-Length": String(obj.size),
+  };
+  if (obj.etag) headers["ETag"] = obj.etag;
+  return new Response(obj.body, { status: 200, headers });
 });

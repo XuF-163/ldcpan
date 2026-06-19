@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────────
--- LDC 内部网盘 D1 schema（含分享链接系统）
+-- IOLDCPan D1 schema（含分享链接系统）
 -- 初始化：wrangler d1 execute ldcpan-db --remote --file=./schema.sql
 -- 已有库升级：见 migrations/002_shares.sql
 -- ─────────────────────────────────────────────────────────────

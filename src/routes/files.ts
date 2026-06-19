@@ -249,3 +249,51 @@ fileRoutes.post("/admin/shares/:id/revoke", requireAdmin, async (c) => {
   await revokeShare(c.env.DB, id);
   return c.redirect("/admin/shares");
 });
+
+// ── 管理员统计：GET /admin/stats（JSON）─────────────────────
+// 收益（积分）/ 存储占用 / 文件·用户·分享·下载 计数，供头像下拉菜单展示。
+fileRoutes.get("/admin/stats", requireAdmin, async (c) => {
+  const db = c.env.DB;
+
+  // 收益：已支付订单积分总和 + 订单数
+  const rev = await db
+    .prepare(`SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt FROM orders WHERE status='paid'`)
+    .first<{ total: number; cnt: number }>();
+  // 近 7 天收益
+  const since7 = new Date(Date.now() - 7 * 86400000).toISOString();
+  const rev7 = await db
+    .prepare(`SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt FROM orders WHERE status='paid' AND paid_at >= ?`)
+    .bind(since7)
+    .first<{ total: number; cnt: number }>();
+  // 待处理/失败订单数
+  const pend = await db
+    .prepare(`SELECT COUNT(*) AS cnt FROM orders WHERE status='pending'`)
+    .first<{ cnt: number }>();
+
+  // 存储：文件总大小 + 数量
+  const stor = await db
+    .prepare(`SELECT COALESCE(SUM(size),0) AS total, COUNT(*) AS cnt, COALESCE(SUM(downloads),0) AS dl FROM files`)
+    .first<{ total: number; cnt: number; dl: number }>();
+
+  // 用户 / 分享 / 购买计数
+  const users = await db.prepare(`SELECT COUNT(*) AS cnt FROM users`).first<{ cnt: number }>();
+  const shares = await db.prepare(`SELECT COUNT(*) AS cnt FROM shares WHERE revoked_at IS NULL`).first<{ cnt: number }>();
+  const purchases = await db.prepare(`SELECT COUNT(*) AS cnt FROM purchases`).first<{ cnt: number }>();
+
+  return c.json({
+    revenue: {
+      total: rev?.total ?? 0,
+      orders: rev?.cnt ?? 0,
+      last7d: { total: rev7?.total ?? 0, orders: rev7?.cnt ?? 0 },
+      pending: pend?.cnt ?? 0,
+    },
+    storage: {
+      bytes: stor?.total ?? 0,
+      files: stor?.cnt ?? 0,
+      downloads: stor?.dl ?? 0,
+    },
+    users: users?.cnt ?? 0,
+    shares: shares?.cnt ?? 0,
+    purchases: purchases?.cnt ?? 0,
+  });
+});

@@ -27,7 +27,7 @@ id = "REPLACE_WITH_KV_NAMESPACE_ID"
 # 非敏感配置（敏感项用 `wrangler secret put` 注入，见 README）
 # ─────────────────────────────────────────────────────────────
 [vars]
-SITE_NAME = "LDC 内部网盘"
+SITE_NAME = "IOLDCPan"
 SITE_BASE_URL = "https://your-domain.example.com"
 DEFAULT_PRICE = "1"        # 单文件默认积分单价（文件未单独定价时使用，0=免费）
 
