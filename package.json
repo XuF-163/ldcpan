@@ -1,0 +1,28 @@
+{
+  "name": "ldcpan",
+  "version": "0.1.0",
+  "private": true,
+  "description": "基于 Cloudflare Workers + R2 的内部网盘，LINUX DO Connect OAuth2 登录 + LINUX DO Credit 积分付费下载",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute ldcpan-db --local --file=./schema.sql",
+    "db:init:remote": "wrangler d1 execute ldcpan-db --remote --file=./schema.sql",
+    "mock": "node mock-server.mjs",
+    "test:unit": "tsx test/unit-logic.ts",
+    "test:local": "node test/local-flow.mjs",
+    "test:share": "node test/share-paid.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.6.14"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241205.0",
+    "tsx": "^4.22.4",
+    "typescript": "^5.7.2",
+    "wrangler": "^3.94.0"
+  }
+}

@@ -1,0 +1,22 @@
+# ── 依赖 ──
+node_modules/
+
+# ── Cloudflare / Wrangler 本地状态（含真实凭据、本地 D1/R2/KV 数据）──
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# 真实部署配置（含 PID / D1 ID / KV ID / 域名），用 wrangler.example.toml 作模板
+wrangler.toml
+
+# ── 测试输出临时文件 ──
+*.txt
+nul
+
+# ── 系统/编辑器 ──
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/

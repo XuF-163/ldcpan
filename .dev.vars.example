@@ -1,0 +1,31 @@
+# 本地开发用：指向 mock 服务器（http://localhost:4000）
+# 复制本文件为 .dev.vars 后按需修改；生产部署不要用此文件
+# wrangler dev 会自动读取 .dev.vars
+
+# Connect 基址（OAuth2 登录，指向 mock 根地址）
+LDC_CONNECT_BASE = "http://localhost:4000"
+
+# Credit 网关基址（EasyPay，指向 mock 的 /epay 前缀）
+CREDIT_BASE = "http://localhost:4000/epay"
+
+# Connect 测试凭据（与 mock-server.mjs 一致）
+LDC_CLIENT_ID = "test_client"
+LDC_CLIENT_SECRET = "test_secret"
+
+# Credit 测试凭据（EasyPay：PID=商户ID，KEY=商户密钥；与 mock 一致）
+CREDIT_PID = "test_client"
+CREDIT_KEY = "test_secret"
+
+# 本地回调用 wrangler dev 的端口
+SITE_BASE_URL = "http://localhost:8787"
+LDC_REDIRECT_URI = "http://localhost:8787/auth/callback"
+CREDIT_NOTIFY_URL = "http://localhost:8787/pay/notify"
+CREDIT_RETURN_URL = "http://localhost:8787/pay/return"
+
+# 测试管理员为 alice（mock 用户）
+ADMIN_USERNAMES = "alice"
+DEFAULT_PRICE = "1"
+SITE_NAME = "LDC 网盘（本地测试）"
+
+# 会话签名密钥（测试用固定值，生产请用随机长串）
+SESSION_SECRET = "local_test_secret_change_me_in_production_0123456789"

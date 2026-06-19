@@ -1,0 +1,48 @@
+name = "ldcpan"
+main = "src/index.ts"
+compatibility_date = "2024-11-06"
+compatibility_flags = ["nodejs_compat"]
+
+# ─────────────────────────────────────────────────────────────
+# Bindings —— 复制本文件为 wrangler.toml 后填入你自己的真实值
+# ─────────────────────────────────────────────────────────────
+
+# 文件 blob 存储（先在 CF 控制台创建 R2 bucket，名字需与此处一致）
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "ldcpan-files"
+
+# 元数据 / 订单 / 用户 / 购买记录（SQLite，D1）
+[[d1_databases]]
+binding = "DB"
+database_name = "ldcpan-db"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+# 会话 token（带 TTL）
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# ─────────────────────────────────────────────────────────────
+# 非敏感配置（敏感项用 `wrangler secret put` 注入，见 README）
+# ─────────────────────────────────────────────────────────────
+[vars]
+SITE_NAME = "LDC 内部网盘"
+SITE_BASE_URL = "https://your-domain.example.com"
+DEFAULT_PRICE = "1"        # 单文件默认积分单价（文件未单独定价时使用，0=免费）
+
+# LINUX DO Connect（client_id 可明文，secret 必须用 secret put）
+LDC_CLIENT_ID = "REPLACE_WITH_CONNECT_CLIENT_ID"
+LDC_REDIRECT_URI = "https://your-domain.example.com/auth/callback"
+
+# LINUX DO Credit（EasyPay 兼容）—— pid 可明文，key 必须用 secret put
+CREDIT_PID = "REPLACE_WITH_CREDIT_PID"
+CREDIT_NOTIFY_URL = "https://your-domain.example.com/pay/notify"
+CREDIT_RETURN_URL = "https://your-domain.example.com/pay/return"
+
+# 管理员用户名（逗号分隔，对应 Connect userinfo.username，小写）
+ADMIN_USERNAMES = "your-username"
+
+# 本地联调可选：指向 mock 服务器
+# LDC_CONNECT_BASE = "http://localhost:4000"
+# CREDIT_BASE = "http://localhost:4000/epay"
