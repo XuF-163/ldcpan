@@ -3,6 +3,7 @@
  */
 
 import { Hono } from "hono";
+import type { Context } from "hono";
 import type { Bindings } from "../env";
 import { effectivePrice } from "../env";
 import { requireAdmin, getSession } from "../auth/session";
@@ -53,8 +54,10 @@ fileRoutes.get("/", async (c) => {
 fileRoutes.get("/f/:id", async (c) => {
   const cfg = c.get("config");
   const session = getSession(c);
+  const ajax = wantsJson(c);
   const file = await getFile(c.env.DB, c.req.param("id"));
   if (!file || (file.hidden && !(session?.isAdmin))) {
+    if (ajax) return c.json({ ok: false, error: "文件不存在或已隐藏" }, 404);
     return c.html(layout({ config: cfg, session }, "未找到", `<div class="panel center"><h2>文件不存在或已隐藏</h2><p><a class="btn" href="/">返回</a></p></div>`), 404);
   }
 
@@ -65,6 +68,26 @@ fileRoutes.get("/f/:id", async (c) => {
     await recordPurchaseIfPaid(c.env.DB, file.id, session.uid, null);
   }
 
+  // AJAX → 返回 JSON（供列表页弹窗渲染）
+  if (ajax) {
+    return c.json({
+      ok: true,
+      id: file.id,
+      name: file.name,
+      size: file.size,
+      mime: file.mime,
+      price,
+      priceRaw: file.price,
+      description: file.description,
+      category: file.category,
+      downloads: file.downloads,
+      hidden: !!file.hidden,
+      createdAt: file.created_at,
+      owned,
+      isAdmin: !!session?.isAdmin,
+      isImage: (file.mime || "").startsWith("image/"),
+    });
+  }
   return c.html(renderDetail({ config: cfg, session }, file, { owned, price }));
 });
 
@@ -77,17 +100,33 @@ fileRoutes.get("/upload", requireAdmin, async (c) => {
 });
 
 // ── 上传处理（管理员）────────────────────────────────────
+// 支持两种响应：
+//   - AJAX 请求（X-Requested-With: fetch 或 Accept: application/json）→ JSON
+//   - 普通表单提交 → HTML/302（兼容 /upload 页面和测试）
+function wantsJson(c: Context): boolean {
+  const accept = c.req.header("accept") || "";
+  const xrw = c.req.header("x-requested-with") || "";
+  return accept.includes("application/json") || xrw.toLowerCase() === "fetch";
+}
+
 fileRoutes.post("/upload", requireAdmin, async (c) => {
   const cfg = c.get("config");
   const session = getSession(c)!;
+  const ajax = wantsJson(c);
+
+  // 统一错误响应：AJAX 返回 JSON，否则 HTML
+  const fail = (msg: string, status = 400) => {
+    if (ajax) return c.json({ ok: false, error: msg }, status as 400);
+    return c.html(layout({ config: cfg, session }, "上传失败", `<div class="panel"><div class="notice err">${escapeHtml(msg)}</div><p><a class="btn" href="/upload">返回</a></p></div>`), status as 400);
+  };
 
   const form = await c.req.formData();
   const upload = form.get("file") as unknown as File | string | null;
   if (!upload || typeof upload === "string") {
-    return c.html(layout({ config: cfg, session }, "上传失败", `<div class="panel"><div class="notice err">未收到文件</div><p><a class="btn" href="/upload">返回</a></p></div>`), 400);
+    return fail("未收到文件");
   }
   if (upload.size === 0) {
-    return c.html(layout({ config: cfg, session }, "上传失败", `<div class="panel"><div class="notice err">文件为空</div><p><a class="btn" href="/upload">返回</a></p></div>`), 400);
+    return fail("文件为空");
   }
 
   const categoryVal = form.get("category");
@@ -100,7 +139,7 @@ fileRoutes.post("/upload", requireAdmin, async (c) => {
   if (priceRaw !== "") {
     const n = parseInt(priceRaw, 10);
     if (!Number.isFinite(n) || n < 0) {
-      return c.html(layout({ config: cfg, session }, "上传失败", `<div class="panel"><div class="notice err">价格必须是非负整数</div><p><a class="btn" href="/upload">返回</a></p></div>`), 400);
+      return fail("价格必须是非负整数");
     }
     price = n;
   }
@@ -124,9 +163,13 @@ fileRoutes.post("/upload", requireAdmin, async (c) => {
       .run();
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return c.html(layout({ config: cfg, session }, "上传失败", `<div class="panel"><div class="notice err">上传失败：${escapeHtml(msg)}</div><p><a class="btn" href="/upload">返回</a></p></div>`), 500);
+    return fail(`上传失败：${msg}`, 500);
   }
 
+  // 成功：AJAX 返回 JSON，否则 302 跳详情页
+  if (ajax) {
+    return c.json({ ok: true, id, url: `/f/${id}`, name });
+  }
   return c.redirect(`/f/${id}`);
 });
 
@@ -158,11 +201,15 @@ fileRoutes.post("/f/:id/edit", requireAdmin, async (c) => {
 
 fileRoutes.post("/f/:id/delete", requireAdmin, async (c) => {
   const id = c.req.param("id");
+  const ajax = wantsJson(c);
   const file = await getFile(c.env.DB, id);
-  if (file) {
-    await deleteObject(c.env.BUCKET, file.key).catch(() => {});
-    await deleteFile(c.env.DB, id);
+  if (!file) {
+    if (ajax) return c.json({ ok: false, error: "文件不存在" }, 404);
+    return c.redirect("/");
   }
+  await deleteObject(c.env.BUCKET, file.key).catch(() => {});
+  await deleteFile(c.env.DB, id);
+  if (ajax) return c.json({ ok: true, id, name: file.name });
   return c.redirect("/");
 });
 

@@ -75,7 +75,7 @@ function tableRows(
       const icon = fileIcon(f);
       return `
         <tr data-ctxjson="${ctxJson(f, isAdmin)}">
-          <td><a href="/f/${escapeHtml(f.id)}" onclick="event.stopPropagation()">${icon.emoji} ${escapeHtml(f.name)}</a>${f.hidden ? ' <span class="tag" title="已隐藏">隐藏</span>' : ""}</td>
+          <td><a href="/f/${escapeHtml(f.id)}" onclick="event.preventDefault();window.__openDetail('${escapeHtml(f.id)}')">${icon.emoji} ${escapeHtml(f.name)}</a>${f.hidden ? ' <span class="tag" title="已隐藏">隐藏</span>' : ""}</td>
           <td class="muted">${escapeHtml(f.category || "—")}</td>
           <td class="muted">${humanSize(f.size)}</td>
           <td>${priceTag(f, rctx.config)}</td>
@@ -100,7 +100,7 @@ function gridCards(
         ? `<img class="fthumb" src="/thumb/${escapeHtml(f.id)}" alt="${escapeHtml(f.name)}" loading="lazy" onerror="this.outerHTML='<div class=\\'ficon img\\'>🖼️</div>'">`
         : `<div class="ficon ${icon.cls}">${icon.emoji}</div>`;
       return `
-        <a class="file-card" href="/f/${escapeHtml(f.id)}" data-ctxjson="${ctxJson(f, isAdmin)}">
+        <a class="file-card" href="/f/${escapeHtml(f.id)}" onclick="event.preventDefault();window.__openDetail('${escapeHtml(f.id)}')" data-ctxjson="${ctxJson(f, isAdmin)}">
           ${iconArea}
           <div class="fname" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
           <div class="fprice">${priceTag(f, rctx.config)}</div>
@@ -199,6 +199,75 @@ const VIEW_JS = `
 
   function escAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 
+  // ── 详情弹窗：fetch /f/:id JSON → 渲染浮层（不跳转）──
+  function humanS(b){if(b<1024)return b+' B';var u=['KB','MB','GB','TB'],v=b/1024,i=0;while(v>=1024&&i<u.length-1){v/=1024;i++;}return v.toFixed(v>=100?0:1)+' '+u[i];}
+  window.__openDetail=function(id){
+    var body='<div class="center muted" style="padding:30px">加载中…</div>';
+    var m=openModal('文件详情', body, '');
+    fetch('/f/'+encodeURIComponent(id),{headers:{'Accept':'application/json','X-Requested-With':'fetch'}})
+    .then(function(r){return r.json();})
+    .then(function(f){
+      if(!f.ok){ m.querySelector('.modal-body').innerHTML='<div class="notice err">'+escAttr(f.error||'加载失败')+'</div>'; return; }
+      var dlBtn = f.owned
+        ? '<a class="btn btn-primary" href="/dl/free?file_id='+encodeURIComponent(f.id)+'">⬇️ 下载</a>'
+        : '<a class="btn btn-primary" href="/pay/create?file_id='+encodeURIComponent(f.id)+'">支付 '+f.price+' 积分下载</a>';
+      var priceTxt = f.price<=0 ? '<span class="free">免费</span>' : '<span class="price">'+f.price+' 积分</span>';
+      // 图片：左侧自适应预览（按原比例，宽度填满左栏）；非图片无预览
+      var thumb = f.isImage
+        ? '<img src="/thumb/'+encodeURIComponent(f.id)+'" alt="" class="dtl-thumb" loading="lazy">'
+        : '';
+      var ownNote = f.owned && f.price>0 ? '<div class="notice ok">你已购买此文件，可重复下载。</div>' : '';
+      // 管理操作（管理员）
+      var admin = f.isAdmin ? '' +
+        '<div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px">'+
+          '<div class="muted" style="font-size:12px;margin-bottom:8px">🛠️ 管理操作</div>'+
+          '<div class="row">'+
+            '<button class="btn btn-sm" id="dtl-edit" type="button">✏️ 编辑</button>'+
+            '<a class="btn btn-sm" href="/admin/shares?file_id='+encodeURIComponent(f.id)+'" target="_blank" rel="noopener">🔗 分享</a>'+
+            '<button class="btn btn-sm btn-danger" id="dtl-del" type="button">🗑️ 删除</button>'+
+            (f.hidden?'<span class="tag">已隐藏</span>':'')+
+          '</div>'+
+        '</div>' : '';
+      var info=
+        '<div class="row" style="align-items:baseline;margin-bottom:6px"><h2 style="margin:0;font-size:17px">'+escAttr(f.name)+'</h2></div>'+
+        (f.description?'<p class="muted">'+escAttr(f.description)+'</p>':'')+
+        '<div class="grid grid-2" style="margin:12px 0">'+
+          '<div><label>分类</label><div>'+escAttr(f.category||'—')+'</div></div>'+
+          '<div><label>大小</label><div>'+humanS(f.size)+'</div></div>'+
+          '<div><label>价格</label><div>'+priceTxt+'</div></div>'+
+          '<div><label>下载次数</label><div>'+escAttr(String(f.downloads))+'</div></div>'+
+          '<div><label>类型</label><div class="muted">'+escAttr(f.mime)+'</div></div>'+
+          '<div><label>上传时间</label><div class="muted">'+escAttr(new Date(f.createdAt).toLocaleString('zh-CN'))+'</div></div>'+
+        '</div>'+
+        ownNote+
+        '<div class="row">'+dlBtn+'</div>'+
+        admin;
+      // 图片文件：左预览 + 右信息 两栏；非图片：单栏
+      if(f.isImage){
+        m.querySelector('.modal-body').innerHTML = '<div class="dtl-layout"><div class="dtl-preview">'+thumb+'</div><div class="dtl-info">'+info+'</div></div>';
+      } else {
+        m.querySelector('.modal-body').innerHTML = info;
+      }
+      // 绑定管理按钮（事件而非内联，避免引号转义问题）
+      var editBtn=m.querySelector('#dtl-edit');
+      if(editBtn) editBtn.onclick=function(){
+        fetch('/f/'+encodeURIComponent(id),{headers:{'Accept':'application/json'}})
+        .then(function(r){return r.json();}).then(function(ff){
+          if(!ff.ok) return;
+          window.__ctxAction('edit',{id:id,name:ff.name,price:ff.priceRaw,category:ff.category,description:ff.description,hidden:ff.hidden,canManage:true});
+        });
+      };
+      var delBtn=m.querySelector('#dtl-del');
+      if(delBtn) delBtn.onclick=function(){
+        // 关闭详情弹窗，再开删除确认
+        document.querySelectorAll('.modal-overlay').forEach(function(el){el.remove();});
+        window.__ctxAction('del',{id:id,name:f.name});
+      };
+    }).catch(function(e){
+      m.querySelector('.modal-body').innerHTML='<div class="notice err">加载失败</div>';
+    });
+  };
+
   // ── 右键菜单内容（供 render.ts CTXMENU_INIT 调用）──
   window.__buildCtxMenu = function(ctx){
     var items=[{act:'open',icon:'<span class="ico">📄</span>',label:'查看详情'}];
@@ -215,7 +284,7 @@ const VIEW_JS = `
 
   // ── 菜单动作 ──
   window.__ctxAction = function(act, ctx){
-    if(act==='open'){ location.href='/f/'+encodeURIComponent(ctx.id); return; }
+    if(act==='open'){ window.__openDetail(ctx.id); return; }
     if(act==='dl'){
       location.href='/pay/create?file_id='+encodeURIComponent(ctx.id); return;
     }
@@ -250,11 +319,46 @@ const VIEW_JS = `
   // ── 删除确认弹窗 ──
   function openDel(ctx){
     var body='<div class="notice err">⚠️ 确认删除文件「'+ctx.name+'」？</div><p class="muted">删除后文件和 R2 存储将一并移除，且<strong>无法恢复</strong>。相关订单记录会保留。</p>';
-    var foot='<button class="btn" type="button">取消</button>'+
-      '<form method="post" action="/f/'+encodeURIComponent(ctx.id)+'/delete" style="display:inline"><button class="btn btn-danger" type="submit">确认删除</button></form>';
+    var foot='<button class="btn" type="button">取消</button><button class="btn btn-danger" type="button" data-confirm>确认删除</button>';
     var m=openModal('删除文件', body, foot);
-    var cancelBtn=m.querySelector('.modal-foot .btn');
+    var cancelBtn=m.querySelector('.modal-foot .btn:not([data-confirm])');
     if(cancelBtn) cancelBtn.onclick=function(){ m.remove(); };
+    var confirmBtn=m.querySelector('[data-confirm]');
+    if(confirmBtn){
+      confirmBtn.onclick=function(){
+        confirmBtn.disabled=true; confirmBtn.textContent='删除中…';
+        fetch('/f/'+encodeURIComponent(ctx.id)+'/delete',{method:'POST',headers:{'Accept':'application/json','X-Requested-With':'fetch'}})
+        .then(function(r){return r.json().then(function(j){return {status:r.status,json:j};}).catch(function(){return {status:r.status,json:{ok:false,error:'HTTP '+r.status}};});})
+        .then(function(res){
+          confirmBtn.disabled=false; confirmBtn.textContent='确认删除';
+          if(res.json && res.json.ok){
+            // 关闭确认弹窗
+            m.remove();
+            // 找到该文件的所有 DOM 行/卡片，播放淡出动画后移除
+            var rows=document.querySelectorAll('[data-ctxjson]');
+            rows.forEach(function(el){
+              try{
+                var d=JSON.parse(el.getAttribute('data-ctxjson')||'{}');
+                if(d.id===ctx.id){
+                  el.style.transition='opacity .4s ease, transform .4s ease, height .4s ease, padding .4s ease, margin .4s ease';
+                  el.style.opacity='0'; el.style.transform='translateX(-40px) scale(.95)';
+                  // 表格行需收起高度
+                  if(el.tagName==='TR'){ el.style.height=el.offsetHeight+'px'; requestAnimationFrame(function(){ el.style.height='0'; el.style.overflow='hidden'; }); }
+                  setTimeout(function(){ el.remove(); }, 420);
+                }
+              }catch(e){}
+            });
+            if(window.showToast) window.showToast('🗑️ '+ctx.name+' 已删除','ok');
+          } else {
+            confirmBtn.disabled=false;
+            if(window.showToast) window.showToast('删除失败：'+((res.json&&res.json.error)||''),'err');
+          }
+        }).catch(function(e){
+          confirmBtn.disabled=false; confirmBtn.textContent='确认删除';
+          if(window.showToast) window.showToast('删除出错','err');
+        });
+      };
+    }
   }
 })();
 `;

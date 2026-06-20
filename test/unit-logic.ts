@@ -28,6 +28,7 @@ import { effectivePrice } from "../src/env";
 import { shareStatus } from "../src/storage/shares";
 import type { ShareRow } from "../src/storage/shares";
 import { sign, verifySign, formatMoney } from "../src/payment/epay";
+import { crc32, buildZip } from "../src/lib/zip";
 
 let pass = 0;
 let fail = 0;
@@ -301,6 +302,116 @@ async function main(): Promise<void> {
       const incoming = { ...notifyParams, sign: sig, sign_type: "MD5" };
       assert(verifySign(incoming, KEY, sig) === true, `回调验签（含 sign/sign_type 字段）通过`);
     }
+  }
+
+  // ── ZIP 打包（STORE 模式）+ CRC32 ─────────────────────────
+  console.log("\n[ZIP] CRC32 + buildZip 打包与结构验证");
+  {
+    // CRC32 黄金向量（标准 RFC 1952 / zlib 测试值）
+    assert(crc32(new TextEncoder().encode("")) === 0, `CRC32("")=0`);
+    assert(crc32(new TextEncoder().encode("a")) === 0xe8b7be43, `CRC32("a")=e8b7be43`);
+    assert(crc32(new TextEncoder().encode("123456789")) === 0xcbf43926, `CRC32("123456789")=cbf43926`);
+    assert(crc32(new TextEncoder().encode("Hello, World!")) === 0xec4ac3d0, `CRC32("Hello, World!")`);
+
+    const enc = new TextEncoder();
+    const entries = [
+      { path: "项目A/readme.txt", data: enc.encode("hello folder") },
+      { path: "项目A/源码/main.ts", data: enc.encode("console.log(1);") },
+      { path: "项目A/空目录/", data: new Uint8Array(0), isDir: true },
+    ];
+    const zipBytes = buildZip(entries);
+    assert(zipBytes.length > 0, `buildZip 产出非空字节`);
+
+    // 魔数校验：PK\x03\x04 开头
+    assert(
+      zipBytes[0] === 0x50 && zipBytes[1] === 0x4b && zipBytes[2] === 0x03 && zipBytes[3] === 0x04,
+      `ZIP 以 PK\\x03\\x04 开头`,
+    );
+
+    // 解析 EOCD（End Of Central Directory）找中央目录位置
+    // EOCD 固定 22 字节在末尾，魔数 PK\x05\x06
+    const eocdSig = new Uint8Array([0x50, 0x4b, 0x05, 0x06]);
+    let eocdOff = -1;
+    for (let i = zipBytes.length - 22; i >= 0; i--) {
+      if (
+        zipBytes[i] === eocdSig[0] && zipBytes[i + 1] === eocdSig[1] &&
+        zipBytes[i + 2] === eocdSig[2] && zipBytes[i + 3] === eocdSig[3]
+      ) {
+        eocdOff = i;
+        break;
+      }
+    }
+    assert(eocdOff >= 0, `找到 EOCD 记录（PK\\x05\\x06）`);
+    const dv = new DataView(zipBytes.buffer);
+    const entryCount = dv.getUint16(eocdOff + 10, true);
+    const cdSize = dv.getUint32(eocdOff + 12, true);
+    const cdOff = dv.getUint32(eocdOff + 16, true);
+    assert(entryCount === 3, `EOCD 条目数=3（含目录占位）`);
+
+    // 遍历中央目录，解析每条目：name / crc / 本地偏移 / 压缩方法
+    const readEntries: { name: string; crc: number; method: number; offset: number }[] = [];
+    let p = cdOff;
+    const dec = new TextDecoder();
+    for (let n = 0; n < entryCount; n++) {
+      assert(dv.getUint32(p, true) === 0x02014b50, `中央目录条目 ${n} 魔数正确`);
+      const method = dv.getUint16(p + 10, true);
+      const crc = dv.getUint32(p + 16, true) >>> 0;
+      const nameLen = dv.getUint16(p + 28, true);
+      const extraLen = dv.getUint16(p + 30, true);
+      const commentLen = dv.getUint16(p + 32, true);
+      const offset = dv.getUint32(p + 42, true);
+      const name = dec.decode(zipBytes.slice(p + 46, p + 46 + nameLen));
+      readEntries.push({ name, crc, method, offset });
+      p += 46 + nameLen + extraLen + commentLen;
+    }
+    assert(p - cdOff === cdSize, `中央目录大小与 EOCD 声明一致`);
+
+    // 验证每个文件条目的方法=STORE(0) 且 CRC 正确，且能从本地头后读到正确数据
+    const findByName = (nm: string) => readEntries.find((e) => e.name === nm);
+    const readme = findByName("项目A/readme.txt")!;
+    assert(!!readme, `解出 项目A/readme.txt`);
+    assert(readme.method === 0, `readme.txt 压缩方法=STORE(0)`);
+    assert(readme.crc === crc32(enc.encode("hello folder")), `readme.txt CRC 正确`);
+
+    const main = findByName("项目A/源码/main.ts")!;
+    assert(!!main, `解出嵌套路径 项目A/源码/main.ts`);
+    assert(main.crc === crc32(enc.encode("console.log(1);")), `main.ts CRC 正确`);
+
+    // 从本地文件头后读取实际数据，校验内容
+    // 本地头固定 30 字节 + 文件名，之后是数据
+    const readData = (e: { offset: number }) => {
+      const nl = dv.getUint16(e.offset + 26, true);
+      const el = dv.getUint16(e.offset + 28, true);
+      const dataStart = e.offset + 30 + nl + el;
+      // 读压缩大小（STORE=原大小）
+      const size = dv.getUint32(e.offset + 18, true);
+      return dec.decode(zipBytes.slice(dataStart, dataStart + size));
+    };
+    assert(readData(readme) === "hello folder", `readme.txt 本地数据正确`);
+    assert(readData(main) === "console.log(1);", `main.ts 本地数据正确`);
+
+    // 目录占位条目
+    const dirEntry = findByName("项目A/空目录/");
+    assert(!!dirEntry, `解出空目录占位条目`);
+
+    // 单文件 ZIP
+    const single = buildZip([{ path: "only.txt", data: enc.encode("solo") }]);
+    const sdv = new DataView(single.buffer);
+    assert(sdv.getUint16(single.length - 22 + 10, true) === 1, `单文件 ZIP 条目数=1`);
+
+    // 路径分隔符规范化：反斜杠自动转正斜杠
+    const bs = buildZip([{ path: "a\\b\\c.txt", data: enc.encode("x") }]);
+    const bDv = new DataView(bs.buffer);
+    let bEocd = -1;
+    for (let i = bs.length - 22; i >= 0; i--) {
+      if (bs[i] === 0x50 && bs[i + 1] === 0x4b && bs[i + 2] === 0x05 && bs[i + 3] === 0x06) {
+        bEocd = i; break;
+      }
+    }
+    const bCdOff = bDv.getUint32(bEocd + 16, true);
+    const bNameLen = bDv.getUint16(bCdOff + 28, true);
+    const bName = dec.decode(bs.slice(bCdOff + 46, bCdOff + 46 + bNameLen));
+    assert(bName === "a/b/c.txt", `反斜杠路径规范化为正斜杠（${bName}）`);
   }
 
   console.log(`\n=== 单元测试结束：${pass} 通过，${fail} 失败 ===\n`);

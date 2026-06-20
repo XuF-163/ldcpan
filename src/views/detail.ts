@@ -143,9 +143,30 @@ function detailAdminJs(file: FileRow): string {
   };
   window.__detailDel=function(){
     var body='<div class="notice err">⚠️ 确认删除文件「'+ctx.name+'」？</div><p class="muted">删除后文件和 R2 存储将一并移除，无法恢复。</p>';
-    var foot='<button class="btn" type="button">取消</button><form method="post" action="/f/'+encodeURIComponent(ctx.id)+'/delete" style="display:inline"><button class="btn btn-danger" type="submit">确认删除</button></form>';
+    var foot='<button class="btn" type="button">取消</button><button class="btn btn-danger" type="button" data-confirm>确认删除</button>';
     var m=openModal('删除文件',body,foot);
-    var cancelBtn=m.querySelector('.modal-foot .btn'); if(cancelBtn) cancelBtn.onclick=function(){m.remove();};
+    var cancelBtn=m.querySelector('.modal-foot .btn:not([data-confirm])'); if(cancelBtn) cancelBtn.onclick=function(){m.remove();};
+    var confirmBtn=m.querySelector('[data-confirm]');
+    if(confirmBtn) confirmBtn.onclick=function(){
+      confirmBtn.disabled=true; confirmBtn.textContent='删除中…';
+      fetch('/f/'+encodeURIComponent(ctx.id)+'/delete',{method:'POST',headers:{'Accept':'application/json','X-Requested-With':'fetch'}})
+      .then(function(r){return r.json().then(function(j){return {status:r.status,json:j};}).catch(function(){return {status:r.status,json:{ok:false,error:'HTTP '+r.status}};});})
+      .then(function(res){
+        if(res.json && res.json.ok){
+          m.remove();
+          // 详情页内容整体淡出后跳回列表
+          var main=document.querySelector('.content');
+          if(main){ main.style.transition='opacity .4s ease'; main.style.opacity='0'; }
+          setTimeout(function(){ location.href='/'; }, 420);
+        } else {
+          confirmBtn.disabled=false; confirmBtn.textContent='确认删除';
+          if(window.showToast) window.showToast('删除失败：'+((res.json&&res.json.error)||''),'err');
+        }
+      }).catch(function(e){
+        confirmBtn.disabled=false; confirmBtn.textContent='确认删除';
+        if(window.showToast) window.showToast('删除出错','err');
+      });
+    };
   };
 })();
 `;
