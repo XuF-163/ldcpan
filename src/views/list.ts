@@ -6,20 +6,9 @@ import type { FileRow } from "../storage/files";
 import { effectivePrice } from "../env";
 import type { AppConfig } from "../env";
 import { escapeHtml } from "../lib/crypto";
+import { humanSize } from "../lib/format";
 import type { RenderCtx } from "../lib/render";
 import { layout } from "../lib/render";
-
-function humanSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let v = bytes / 1024;
-  let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(v >= 100 ? 0 : 1)} ${units[i]}`;
-}
 
 function priceTag(file: FileRow, config: AppConfig): string {
   const price = effectivePrice(file.price, config.defaultPrice);
@@ -183,24 +172,9 @@ const VIEW_JS = `
     });
   }
 
-  // ── 简易弹窗 helper ──
-  function openModal(title, bodyHtml, footHtml){
-    var ov=document.createElement('div');
-    ov.className='modal-overlay';
-    ov.innerHTML='<div class="modal"><div class="modal-head"><h3>'+title+'</h3><button class="modal-x" type="button">×</button></div><div class="modal-body">'+bodyHtml+'</div>'+(footHtml?'<div class="modal-foot">'+footHtml+'</div>':'')+'</div>';
-    var inner=ov.querySelector('.modal');
-    var closed=false;
-    function close(){ if(closed) return; closed=true; ov.classList.add('closing'); if(inner) inner.classList.add('closing'); setTimeout(function(){ ov.remove(); }, 200); }
-    ov.addEventListener('click',function(e){ if(e.target===ov||e.target.classList.contains('modal-x')) close(); });
-    document.addEventListener('keydown',function esc(e){ if(e.key==='Escape'){close();document.removeEventListener('keydown',esc);} });
-    document.body.appendChild(ov);
-    return ov;
-  }
-
-  function escAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+  // openModal / escAttr / humanSize 已在 shared.js 定义（全局，页面 head 先加载）
 
   // ── 详情弹窗：fetch /f/:id JSON → 渲染浮层（不跳转）──
-  function humanS(b){if(b<1024)return b+' B';var u=['KB','MB','GB','TB'],v=b/1024,i=0;while(v>=1024&&i<u.length-1){v/=1024;i++;}return v.toFixed(v>=100?0:1)+' '+u[i];}
   window.__openDetail=function(id){
     var body='<div class="center muted" style="padding:30px">加载中…</div>';
     var m=openModal('文件详情', body, '');
@@ -233,7 +207,7 @@ const VIEW_JS = `
         (f.description?'<p class="muted">'+escAttr(f.description)+'</p>':'')+
         '<div class="grid grid-2" style="margin:12px 0">'+
           '<div><label>分类</label><div>'+escAttr(f.category||'—')+'</div></div>'+
-          '<div><label>大小</label><div>'+humanS(f.size)+'</div></div>'+
+          '<div><label>大小</label><div>'+humanSize(f.size)+'</div></div>'+
           '<div><label>价格</label><div>'+priceTxt+'</div></div>'+
           '<div><label>下载次数</label><div>'+escAttr(String(f.downloads))+'</div></div>'+
           '<div><label>类型</label><div class="muted">'+escAttr(f.mime)+'</div></div>'+

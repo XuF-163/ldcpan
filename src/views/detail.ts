@@ -3,20 +3,9 @@
  */
 import type { FileRow } from "../storage/files";
 import { escapeHtml } from "../lib/crypto";
+import { humanSize } from "../lib/format";
 import type { RenderCtx } from "../lib/render";
 import { layout } from "../lib/render";
-
-function humanSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let v = bytes / 1024;
-  let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(v >= 100 ? 0 : 1)} ${units[i]}`;
-}
 
 export interface DetailExtra {
   owned: boolean; // 用户已购买（或免费）
@@ -109,19 +98,7 @@ function detailAdminJs(file: FileRow): string {
   return `
 (function(){
   var ctx = ${ctx};
-  function openModal(title, bodyHtml, footHtml){
-    var ov=document.createElement('div');
-    ov.className='modal-overlay';
-    ov.innerHTML='<div class="modal"><div class="modal-head"><h3>'+title+'</h3><button class="modal-x" type="button">×</button></div><div class="modal-body">'+bodyHtml+'</div>'+(footHtml?'<div class="modal-foot">'+footHtml+'</div>':'')+'</div>';
-    var inner=ov.querySelector('.modal');
-    var closed=false;
-    function close(){ if(closed) return; closed=true; ov.classList.add('closing'); if(inner) inner.classList.add('closing'); setTimeout(function(){ ov.remove(); }, 200); }
-    ov.addEventListener('click',function(e){ if(e.target===ov||e.target.classList.contains('modal-x')) close(); });
-    document.addEventListener('keydown',function esc(e){ if(e.key==='Escape'){close();document.removeEventListener('keydown',esc);} });
-    document.body.appendChild(ov);
-    return ov;
-  }
-  function escAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+  // openModal / escAttr / showToast 已在 shared.js 定义（全局，页面 head 先加载）
   window.__detailEdit=function(){
     var body='<form id="editForm" method="post" action="/f/'+encodeURIComponent(ctx.id)+'/edit">'+
       '<label>价格（留空=默认价，0=免费）</label>'+

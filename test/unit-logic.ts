@@ -29,6 +29,8 @@ import { shareStatus } from "../src/storage/shares";
 import type { ShareRow } from "../src/storage/shares";
 import { sign, verifySign, formatMoney } from "../src/payment/epay";
 import { crc32, buildZip } from "../src/lib/zip";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 
 let pass = 0;
 let fail = 0;
@@ -412,6 +414,34 @@ async function main(): Promise<void> {
     const bNameLen = bDv.getUint16(bCdOff + 28, true);
     const bName = dec.decode(bs.slice(bCdOff + 46, bCdOff + 46 + bNameLen));
     assert(bName === "a/b/c.txt", `反斜杠路径规范化为正斜杠（${bName}）`);
+  }
+
+  // ── 静态资源文件存在性 + 关键内容（重构后从内联抽出的文件）──
+  console.log("\n[Assets] 静态资源文件存在性 + 关键选择器");
+  {
+    const D = join(process.cwd(), "public", "assets");
+    const cases: { file: string; minSize: number; contains?: string[] }[] = [
+      { file: "app.css", minSize: 2000, contains: [".fab", '[data-theme="dark"]', ".modal-overlay", "@keyframes pop"] },
+      { file: "theme-init.js", minSize: 200, contains: ["__setTheme", "ldcpan_theme", "isNight"] },
+      { file: "shared.js", minSize: 1000, contains: ["window.openModal", "window.showToast", "window.humanSize", "window.buildZip", "window.crc32", "window.escAttr"] },
+      { file: "ctxmenu.js", minSize: 500, contains: ["data-ctxjson", "__buildCtxMenu", "__ctxAction"] },
+      { file: "usermenu.js", minSize: 300, contains: ["__toggleUserMenu", "loadStats", "/admin/stats"] },
+      { file: "upload.js", minSize: 1000, contains: ["buildZip", "crc32", "openUploadModal", "webkitGetAsEntry", "submitUpload"] },
+    ];
+    for (const c of cases) {
+      const p = join(D, c.file);
+      assert(existsSync(p), `静态文件存在：${c.file}`);
+      const content = readFileSync(p, "utf8");
+      assert(content.length >= c.minSize, `${c.file} 大小 ≥ ${c.minSize}（实际 ${content.length}）`);
+      if (c.contains) {
+        for (const needle of c.contains) {
+          assert(content.includes(needle), `${c.file} 含关键标记 "${needle}"`);
+        }
+      }
+    }
+    // app.css 必须不含模板字符串残留（如未去掉的反引号或 STYLES 字样）
+    const css = readFileSync(join(D, "app.css"), "utf8");
+    assert(!css.includes("STYLES") && !css.includes("`"), `app.css 无模板字符串残留`);
   }
 
   console.log(`\n=== 单元测试结束：${pass} 通过，${fail} 失败 ===\n`);

@@ -418,6 +418,35 @@ async function main() {
     }
   }
 
+  // ── T13 静态资源 HTTP 可访问性（重构后 CSS/JS 从内联抽成静态文件）──
+  console.log("\n--- T13 静态资源 HTTP 可访问性 ---");
+  {
+    const assets = [
+      { path: "/assets/app.css", typeIncludes: "text/css", contains: ".fab" },
+      { path: "/assets/theme-init.js", typeIncludes: "javascript", contains: "__setTheme" },
+      { path: "/assets/shared.js", typeIncludes: "javascript", contains: "window.openModal" },
+      { path: "/assets/ctxmenu.js", typeIncludes: "javascript", contains: "__buildCtxMenu" },
+      { path: "/assets/usermenu.js", typeIncludes: "javascript", contains: "__toggleUserMenu" },
+      { path: "/assets/upload.js", typeIncludes: "javascript", contains: "buildZip" },
+    ];
+    for (const a of assets) {
+      const r = await fetch(`${WORKER}${a.path}`);
+      assert(r.status === 200, `${a.path} 返回 200（实际 ${r.status}）`);
+      const ct = r.headers.get("content-type") || "";
+      assert(ct.includes(a.typeIncludes), `${a.path} Content-Type 含 ${a.typeIncludes}（实际 ${ct}）`);
+      const body = await r.text();
+      assert(body.includes(a.contains), `${a.path} 含关键标记 "${a.contains}"`);
+    }
+    // 主页 HTML 应引用外链资源、不再内联 <style> 大块 CSS
+    const home = await (await fetch(`${WORKER}/`)).text();
+    assert(home.includes('href="/assets/app.css"'), `主页引用外链 app.css`);
+    assert(home.includes('src="/assets/theme-init.js"'), `主页引用外链 theme-init.js`);
+    assert(home.includes('src="/assets/shared.js"'), `主页引用外链 shared.js（先于其它脚本加载）`);
+    assert(!/<style>[\s\S]{500,}<\/style>/.test(home), `主页无超大内联 <style>（>500字符）`);
+    assert(home.includes('src="/assets/ctxmenu.js"'), `主页引用外链 ctxmenu.js`);
+    console.log(`  ℹ️  5 个静态资源均 200 + 正确 MIME + 主页改用外链`);
+  }
+
   return finish();
 }
 
